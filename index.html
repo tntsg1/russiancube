@@ -172,6 +172,20 @@
         let dropInterval = 1000; // 1秒下落一次
         let isPaused = false;
 
+        // 根据设备性能调整特效强度
+        const hardwareConcurrency = navigator.hardwareConcurrency || 4;
+        const deviceMemory = navigator.deviceMemory || 4;
+        const isMobileDevice = /Mobi|Android/i.test(navigator.userAgent);
+        const isLowPerformanceDevice = hardwareConcurrency <= 4 || deviceMemory <= 4 || isMobileDevice;
+
+        const effectsSettings = {
+            particleMultiplier: isLowPerformanceDevice ? 0.35 : 1,
+            maxParticles: isLowPerformanceDevice ? 320 : 1200,
+            enableScreenDistortion: !isLowPerformanceDevice,
+            enableCyberGrid: !isLowPerformanceDevice,
+            enableRotateTrail: !isLowPerformanceDevice
+        };
+
         const SHAPES = [
             [[1, 1, 1, 1]], // I
             [[1, 1], [1, 1]], // O
@@ -234,15 +248,17 @@
                     for (let i = 0; i <= steps; i++) {
                         this.rotationAngle = (i / steps) * Math.PI / 2;
                         
-                        // 创建旋转特效
-                        for (let y = 0; y < this.shape.length; y++) {
-                            for (let x = 0; x < this.shape[y].length; x++) {
-                                if (this.shape[y][x]) {
-                                    const angle = this.rotationAngle + Math.PI * 2 * (i / steps);
-                                    const radius = BLOCK_SIZE;
-                                    const px = centerX + Math.cos(angle) * radius;
-                                    const py = centerY + Math.sin(angle) * radius;
-                                    particles.push(new Particle(px, py, this.color, 'rotateTrail'));
+                        if (effectsSettings.enableRotateTrail) {
+                            // 创建旋转特效
+                            for (let y = 0; y < this.shape.length; y++) {
+                                for (let x = 0; x < this.shape[y].length; x++) {
+                                    if (this.shape[y][x]) {
+                                        const angle = this.rotationAngle + Math.PI * 2 * (i / steps);
+                                        const radius = BLOCK_SIZE;
+                                        const px = centerX + Math.cos(angle) * radius;
+                                        const py = centerY + Math.sin(angle) * radius;
+                                        pushParticle(new Particle(px, py, this.color, 'rotateTrail'));
+                                    }
                                 }
                             }
                         }
@@ -471,6 +487,7 @@
 
         // 添加视觉畸变效果
         function createDistortionEffect() {
+            if (!effectsSettings.enableScreenDistortion) return;
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
             const length = data.length;
@@ -493,6 +510,7 @@
 
         // 创建电子网格效果
         function createCyberGrid() {
+            if (!effectsSettings.enableCyberGrid) return;
             ctx.save();
             ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
             ctx.lineWidth = 1;
@@ -524,29 +542,31 @@
         // 升级特效创建函数
         function createExplosionEffect(x, y, color) {
             // 爆炸粒子
-            for (let i = 0; i < 20; i++) {
-                particles.push(new Particle(x, y, color, 'explosion'));
+            for (let i = 0; i < scaledCount(20); i++) {
+                pushParticle(new Particle(x, y, color, 'explosion'));
             }
-            
+
             // 像素碎片
-            for (let i = 0; i < 8; i++) {
-                particles.push(new Particle(x, y, color, 'pixel'));
+            for (let i = 0; i < scaledCount(8); i++) {
+                pushParticle(new Particle(x, y, color, 'pixel'));
             }
-            
+
             // 火花效果
-            for (let i = 0; i < 12; i++) {
-                particles.push(new Particle(x, y, '#ffffff', 'spark'));
+            for (let i = 0; i < scaledCount(12); i++) {
+                pushParticle(new Particle(x, y, '#ffffff', 'spark'));
             }
-            
+
             // 冲击波
-            particles.push(new Particle(x, y, color, 'shockwave'));
-            
-            // 上升光束
-            for (let i = 0; i < 5; i++) {
-                particles.push(new Particle(x, y, color, 'trail'));
+            if (effectsSettings.particleMultiplier > 0) {
+                pushParticle(new Particle(x, y, color, 'shockwave'));
             }
-            
-            shakeIntensity = 15;
+
+            // 上升光束
+            for (let i = 0; i < scaledCount(5); i++) {
+                pushParticle(new Particle(x, y, color, 'trail'));
+            }
+
+            shakeIntensity = isLowPerformanceDevice ? Math.min(10, shakeIntensity + 10) : 15;
         }
 
         // 修改消行动画
@@ -565,8 +585,8 @@
             const centerY = y * BLOCK_SIZE + BLOCK_SIZE / 2;
             
             // 创建扩散波
-            for (let i = 0; i < 3; i++) {
-                particles.push(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
+            for (let i = 0; i < scaledCount(3); i++) {
+                pushParticle(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
             }
             
             // 创建电弧效果
@@ -578,7 +598,7 @@
                     // 创建能量爆发
                     for (let i = 0; i < 8; i++) {
                         const angle = (Math.PI * 2 * i) / 8;
-                        particles.push(new Particle(
+                        pushParticle(new Particle(
                             worldX + Math.cos(angle) * BLOCK_SIZE,
                             worldY + Math.sin(angle) * BLOCK_SIZE,
                             '#ffffff',
@@ -611,14 +631,14 @@
                 const centerY = canvas.height / 2;
                 
                 // 创建电弧效果
-                for (let i = 0; i < linesCleared * 10; i++) {
-                    particles.push(new Particle(centerX, centerY, '#00ffff', 'chain'));
+                for (let i = 0; i < scaledCount(linesCleared * 10); i++) {
+                    pushParticle(new Particle(centerX, centerY, '#00ffff', 'chain'));
                 }
                 
                 // 创建脉冲波
                 for (let i = 0; i < linesCleared; i++) {
                     const y = linesToAnimate[i] * BLOCK_SIZE + BLOCK_SIZE / 2;
-                    particles.push(new Particle(centerX, y, '#ffffff', 'shockwave'));
+                    pushParticle(new Particle(centerX, y, '#ffffff', 'shockwave'));
                 }
                 
                 // 增加屏幕震动
@@ -646,8 +666,8 @@
                     // 创建中心扩散的冲击波
                     const centerX = canvas.width / 2;
                     const centerY = canvas.height / 2;
-                    for (let i = 0; i < linesCleared; i++) {
-                        particles.push(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
+                    for (let i = 0; i < scaledCount(linesCleared); i++) {
+                        pushParticle(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
                     }
                 }
             }
@@ -722,16 +742,16 @@
                             const worldY = (currentPiece.y + y) * BLOCK_SIZE + BLOCK_SIZE;
                             
                             // 创建冲击波
-                            particles.push(new Particle(worldX, worldY, '#ffffff', 'shockwave'));
-                            
+                            pushParticle(new Particle(worldX, worldY, '#ffffff', 'shockwave'));
+
                             // 创建火花
-                            for (let i = 0; i < 3; i++) {
-                                particles.push(new Particle(worldX, worldY, currentPiece.color, 'spark'));
+                            for (let i = 0; i < scaledCount(3); i++) {
+                                pushParticle(new Particle(worldX, worldY, currentPiece.color, 'spark'));
                             }
-                            
+
                             // 创建尘埃效果
-                            for (let i = 0; i < 5; i++) {
-                                particles.push(new Particle(worldX, worldY, '#888888', 'dust'));
+                            for (let i = 0; i < scaledCount(5); i++) {
+                                pushParticle(new Particle(worldX, worldY, '#888888', 'dust'));
                             }
                         }
                     }
@@ -765,8 +785,8 @@
                             const worldY = (y + sy) * BLOCK_SIZE + BLOCK_SIZE / 2;
                             
                             // 创建更密集的轨迹粒子
-                            for (let j = 0; j < 3; j++) {
-                                particles.push(new Particle(worldX, worldY, currentPiece.color, 'trail'));
+                            for (let j = 0; j < scaledCount(3); j++) {
+                                pushParticle(new Particle(worldX, worldY, currentPiece.color, 'trail'));
                             }
                         }
                     }
@@ -786,9 +806,10 @@
             const centerY = (finalY + shape.length/2) * BLOCK_SIZE;
             
             // 创建多层冲击波
-            for (let i = 0; i < 5; i++) {
+            const shockwaveBursts = scaledCount(5);
+            for (let i = 0; i < shockwaveBursts; i++) {
                 setTimeout(() => {
-                    particles.push(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
+                    pushParticle(new Particle(centerX, centerY, '#ffffff', 'shockwave'));
                 }, i * 50);
             }
             
@@ -800,25 +821,28 @@
                         const worldY = (finalY + y) * BLOCK_SIZE + BLOCK_SIZE;
                         
                         // 增加火花数量和持续时间
-                        for (let i = 0; i < 8; i++) {
+                        const sparkBursts = scaledCount(8);
+                        for (let i = 0; i < sparkBursts; i++) {
                             setTimeout(() => {
-                                particles.push(new Particle(worldX, worldY, '#ffffff', 'spark'));
+                                pushParticle(new Particle(worldX, worldY, '#ffffff', 'spark'));
                             }, i * 30);
                         }
-                        
+
                         // 增加爆炸粒子
-                        for (let i = 0; i < 5; i++) {
-                            particles.push(new Particle(worldX, worldY, currentPiece.color, 'explosion'));
+                        for (let i = 0; i < scaledCount(5); i++) {
+                            pushParticle(new Particle(worldX, worldY, currentPiece.color, 'explosion'));
                         }
                     }
                 }
             }
-            
+
             // 创建更大的地面裂痕效果
             createGroundCrackEffect(centerX, centerY);
-            
+
             // 添加屏幕扭曲效果
-            createDistortionEffect();
+            if (effectsSettings.enableScreenDistortion) {
+                createDistortionEffect();
+            }
             
             mergePiece();
             currentPiece = new Piece();
@@ -1108,9 +1132,20 @@
 
         let particles = [];
 
+        function scaledCount(baseCount) {
+            if (baseCount <= 0) return 0;
+            return Math.max(0, Math.round(baseCount * effectsSettings.particleMultiplier));
+        }
+
+        function pushParticle(particle) {
+            if (particles.length >= effectsSettings.maxParticles) return;
+            particles.push(particle);
+        }
+
         function createParticles(x, y, color, count) {
-            for (let i = 0; i < count; i++) {
-                particles.push(new Particle(x, y, color));
+            const total = scaledCount(count);
+            for (let i = 0; i < total; i++) {
+                pushParticle(new Particle(x, y, color));
             }
         }
 
@@ -1272,8 +1307,8 @@
                 const centerY = rect.top + rect.height / 2;
                 
                 // 添加分数光晕效果
-                for (let i = 0; i < 5; i++) {
-                    particles.push(new Particle(centerX, centerY, '#00ffff', 'glow'));
+                for (let i = 0; i < scaledCount(5); i++) {
+                    pushParticle(new Particle(centerX, centerY, '#00ffff', 'glow'));
                 }
                 
                 // 动态数字增长效果
